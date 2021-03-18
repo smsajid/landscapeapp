@@ -4,6 +4,8 @@ import saneName from '../src/utils/saneName'
 import { settings, projectPath } from './settings'
 import path from 'path';
 const base = settings.global.website;
+import { execSync } from 'child_process'
+
 // sync should go from a proper place!!!
 require('child_process').execSync(`cd '${projectPath}'; git remote rm github 2>/dev/null || true`);
 const credentials = process.env.GITHUB_USER ? `${process.env.GITHUB_USER}:${process.env.GITHUB_TOKEN}@` : '';
@@ -20,7 +22,8 @@ function getFileFromHistory(days) {
 }
 
 function getCommitFromHistory(days) {
-  const commit = require('child_process').execSync(`cd '${projectPath}'; git log --format='%H' -n 1 --before='{${days} days ago}' --author='CNCF-bot' github/master`, {
+  const defaultBranch = execSync('git rev-parse --abbrev-ref origin/HEAD').toString().trim().split('/')[1]
+  const commit = execSync(`cd '${projectPath}'; git log --format='%H' -n 1 --before='{${days} days ago}' --author='CNCF-bot' github/${defaultBranch}`, {
     maxBuffer: 100 * 1024 * 1024
   }).toString('utf-8').trim();
   return commit;
