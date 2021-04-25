@@ -47,14 +47,12 @@ Additional keys that can be set are defined below:
 ```yaml
   # url for the Twitter account; Only add if the value in Crunchbase is incorrect
   twitter: 
-  # url to the GitHub repo for the project; must start with https://github.com/. If you add a `repo_url` the card will be white instead of grey. 
+  # url to the repo for the project; will fetch stats if it starts with https://github.com/. If you add a `repo_url` the card will be white instead of grey. 
   repo_url: 
   # url to the GitHub organization for the project; when using `repo_url`, `project_org` can be set pointing to an organization on GitHub, this will have the effect of pulling the information for all the repos belonging to that organization but using `repo_url` for information regarding license and best practices.
   project_org: 
-  # additional GitHub repos for the project; must start with https://github.com/
+  # additional repos for the project; will fetch stats if they start with https://github.com/
   additional_repos: 
-  # url for repos not hosted on github.com, no information will be pulled from the repo, but the URL will be shown on the item modal
-  other_repo_url:
   # Stock Ticker for the organization of the project/entry; normally pulls from Crunchbase but can be overriden here. For delisted and many foreign countries, you'll need to add `stock_ticker` with the value to look up on Yahoo Finance to find the market cap.
   stock_ticker: 
   # description of the entry; if not set pulls from the GitHub repo description
@@ -127,6 +125,20 @@ SVGs need to not rely on external fonts so that they will render correctly in an
 We require all landscape entries to include a [Crunchbase](https://www.crunchbase.com/) url. We use the Crunchbase API to fetch the backing organization and headquarters location and (if they exist), Twitter, LinkedIn, funding, parent organization, and stock ticker. For open source, non-affiliated projects, we will just create a nonprofit organization representing the project (if one doesn't already exist), and set the location to the lead developer.
 
 Using an external source for this info saves effort in most cases, because most organizations are already listed. Going forward, the data is being independently maintained and updated over time.
+
+#### Overriding industries from Crunchbase
+
+To override industries returned from Crunchbase for a specific Crunchbase entry, add it to an `crunchbase_overrides` top-level entry on `landscape.yml`. For instance, the following will set `industries` for Linux Foundation to Linux and Cloud Computing:
+
+```yaml
+crunchbase_overrides:
+  https://www.crunchbase.com/organization/linux-foundation:
+    industries:
+      - Linux
+      - Cloud Computing
+```
+
+`crunchbase_overrides` must be a top-level key on `landscape.yml`, so it should be a sibling of `landscape`. That's to prevent having to override multiple items that share the same Crunchbase URL.
 
 ## External Data
 
