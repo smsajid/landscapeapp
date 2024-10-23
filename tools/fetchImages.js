@@ -1,24 +1,24 @@
-import './suppressAnnoyingWarnings';
-import colors from 'colors';
-import rp from './rpRetry';
-import Promise from 'bluebird';
-import saneName from '../src/utils/saneName';
-import fs from 'fs';
-import path from 'path';
-import _ from 'lodash';
-import { settings, projectPath } from './settings';
-import errorsReporter from './reporter';
-import makeReporter from './progressReporter';
-import autoCropSvg from 'svg-autocrop';
-import retry from "./retry";
-const debug = require('debug')('images');
-const { addFatal, addError } = errorsReporter('image');
+const colors = require('colors');
+const Promise = require('bluebird');
+const fs = require('fs');
+const path = require('path');
+const _ = require('lodash');
+const autoCropSvg = require('svg-autocrop');
+const traverse = require('traverse');
 
+require('./suppressAnnoyingWarnings');
+const { saneName } = require('../src/utils/saneName');
+const { projectPath } = require('./settings');
+const { errorsReporter } = require('./reporter');
+const { makeReporter } = require('./progressReporter');
+const { retry } = require("./retry");
+const debug = require('debug')('images');
+
+const { addFatal, addError } = errorsReporter('image');
 const error = colors.red;
 const fatal = (x) => colors.red(colors.inverse(x));
 const cacheMiss = colors.green;
 
-const traverse = require('traverse');
 
 async function getLandscapeItems() {
   const source =  require('js-yaml').load(fs.readFileSync(path.resolve(projectPath, 'landscape.yml')));
@@ -31,6 +31,7 @@ async function getLandscapeItems() {
     if (node.item !== null) {
       return;
     }
+    saneName(node.name);
     items.push({logo: node.logo, name: node.name, organization: node.organization});
   });
   _.each(items, function(item) {
@@ -40,7 +41,7 @@ async function getLandscapeItems() {
   return items;
 }
 
-export async function extractSavedImageEntries() {
+module.exports.extractSavedImageEntries =  async function() {
   const traverse = require('traverse');
   let source = [];
   try {
@@ -79,7 +80,7 @@ function getItemHash(item) {
   return;
 }
 
-export async function fetchImageEntries({cache, preferCache}) {
+module.exports.fetchImageEntries =  async function({cache, preferCache}) {
   const items = await getLandscapeItems();
   const errors = [];
   const fatalErrors = [];
@@ -101,10 +102,6 @@ export async function fetchImageEntries({cache, preferCache}) {
         return cachedEntry;
       }
       debug(`Fetching data for ${item.name} with logo ${item.logo}`);
-      if (url && url.indexOf('//github.com/') !== -1) {
-        url = url.replace('github.com', 'raw.githubusercontent.com');
-        url = url.replace('blob/', '');
-      }
       if (!url) {
         return null;
       }
@@ -117,7 +114,11 @@ export async function fetchImageEntries({cache, preferCache}) {
       }
 
       outputExt = '.svg';
-      const fileName = `${saneName(item.id)}${outputExt}`;
+      let fileNamePart = saneName(item.id);
+      if (!fileNamePart) {
+        fileNamePart = require('crypto').createHash('md5').update(item.id).digest('hex');
+      }
+      const fileName = `${fileNamePart}${outputExt}`;
       var response = null;
       if (url.indexOf('http://') !== 0 && url.indexOf('https://') !== 0) {
         if (fs.readdirSync(path.resolve(projectPath, 'hosted_logos')).indexOf(url) === -1) {
@@ -125,14 +126,16 @@ export async function fetchImageEntries({cache, preferCache}) {
         }
         response = fs.readFileSync(path.resolve(projectPath, 'hosted_logos', url));
       } else {
-        response = await rp({
-          encoding: null,
-          uri: url,
-          followRedirect: true,
-          maxRedirects: 5,
-          simple: true,
-          timeout: 30 * 1000
-        });
+        fatalErrors.push(`We do not support urls for images anymore. Please download the image and put it into the hosted_logos folder, then put its name to the logo field`);
+        return null;
+        // response = await rp({
+          // encoding: null,
+          // uri: url,
+          // followRedirect: true,
+          // maxRedirects: 5,
+          // simple: true,
+          // timeout: 30 * 1000
+        // });
       }
       const croppedSvgResult = await retry(() => autoCropSvg(response, {title: `${item.name} logo`}), 2, 1000);
       const croppedSvg = croppedSvgResult.result;
@@ -167,7 +170,7 @@ export async function fetchImageEntries({cache, preferCache}) {
   }
 }
 
-export function removeNonReferencedImages(imageEntries) {
+module.exports.removeNonReferencedImages = function(imageEntries) {
   const existingFiles = fs.readdirSync(path.resolve(projectPath, 'cached_logos'));
   const allowedFiles = imageEntries.filter( (e) => !!e).map( (e) => e.fileName );
   _.each(existingFiles, function(existingFile) {

@@ -1,5 +1,6 @@
-import { writeFileSync } from 'fs'
-import { settings }  from './settings'
+const path = require('path');
+const { writeFileSync } = require('fs');
+const { distPath, settings } = require('./settings');
 
 const isMainBranch = process.env.PULL_REQUEST !== 'true'
 
@@ -17,4 +18,5 @@ Disallow: /
   `
 ;
 
-writeFileSync('out/robots.txt', content);
+const fileName = path.resolve(distPath, 'robots.txt');
+writeFileSync(fileName, content);

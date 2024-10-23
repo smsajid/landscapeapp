@@ -1,9 +1,11 @@
 // Calculates a json file which shows changes in funding of different companies
-import _ from 'lodash';
-import saneName from '../src/utils/saneName'
-import { settings, projectPath } from './settings'
-import path from 'path';
-import { execSync } from 'child_process'
+const _ = require('lodash');
+const path = require('path');
+const { execSync } = require('child_process');
+
+const { saneName } = require('../src/utils/saneName');
+const { settings, projectPath } = require('./settings');
+
 const base = settings.global.website;
 // sync should go from a proper place!!!
 require('child_process').execSync(`cd '${projectPath}'; git remote rm github 2>/dev/null || true`);
@@ -12,23 +14,16 @@ require('child_process').execSync(`cd '${projectPath}'; git remote add github ht
 console.info(require('child_process').execSync(`cd '${projectPath}'; git fetch github`).toString('utf-8'));
 
 function getFileFromHistory(days) {
-  const commit = getCommitFromHistory(days);
-  const content = require('child_process').execSync(`cd '${projectPath}'; git show ${commit}:processed_landscape.yml`, {
-    maxBuffer: 100 * 1024 * 1024
-  }).toString('utf-8');
-  const source = require('js-yaml').load(content);
-  return source;
+  try {
+    const content = require('child_process').execSync(`cd '${projectPath}'; git show HEAD~${days}:processed_landscape.yml 2>/dev/null`, {
+      maxBuffer: 100 * 1024 * 1024
+    }).toString('utf-8');
+    const source = require('js-yaml').load(content);
+    return source;
+  } catch(ex) {
+    return { landscape: []};
+  }
 }
-
-function getCommitFromHistory(days) {
-  const defaultBranch = execSync(`cd '${projectPath}'; git remote show github | grep HEAD`).toString().trim().split(' ').pop()
-  const commit = execSync(`cd '${projectPath}'; git log --format='%H' -n 1 --before='{${days} days ago}' --author='CNCF-bot' github/${defaultBranch}`, {
-    maxBuffer: 100 * 1024 * 1024
-  }).toString('utf-8').trim();
-  return commit;
-}
-
-
 
 function getFileFromFs() {
   const content = require('fs').readFileSync(path.resolve(projectPath, 'processed_landscape.yml'), 'utf-8');

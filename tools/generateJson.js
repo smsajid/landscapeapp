@@ -1,23 +1,22 @@
-import { readFileSync } from 'fs'
-import Promise from 'bluebird';
-import { load } from 'js-yaml'
-import { hasFatalErrors, reportFatalErrors } from './fatalErrors';
-import { projectPath, settings } from './settings';
-import errorsReporter from './reporter';
+const formatNumber = require('format-number');
+const { readFileSync } = require('fs');
+const Promise = require('bluebird');
+const { emojify } = require('node-emoji')
+const { load } = require('js-yaml');
+const _ = require('lodash');
+const traverse = require('traverse');
+
+const { hasFatalErrors, reportFatalErrors } = require('./fatalErrors');
+const { projectPath, settings } = require('./settings');
+const { errorsReporter } = require('./reporter');
+const { actualTwitter } = require('./actualTwitter');
+const { saneName } = require('../src/utils/saneName');
+const { formatCity } = require('../src/utils/formatCity');
+const { formatAmount } = require('../src/utils/formatAmount');
+
 const { addFatal } = errorsReporter('general');
-
-console.info('processed', projectPath);
-
 const processedLandscape = load(readFileSync(`${projectPath}/processed_landscape.yml`))
 const { crunchbase_overrides = {} } = load(readFileSync(`${projectPath}/landscape.yml`))
-const traverse = require('traverse');
-const _ = require('lodash');
-const { emojify } = require('node-emoji')
-
-import actualTwitter from './actualTwitter';
-import saneName from '../src/utils/saneName';
-import formatCity from '../src/utils/formatCity';
-import pack from '../src/utils/packArray';
 
 async function failOnSingleError(text) {
   addFatal(text);
@@ -142,7 +141,7 @@ async function main () {
           result = formatCity(node.crunchbase_data);
         }
         if (!result) {
-          result = 'N/A';
+          result = ' N/A';
         }
         return result;
       };
@@ -162,12 +161,15 @@ async function main () {
         return null;
       };
       const getLicense = function() {
+        if (node.license) {
+          return node.license || 'Unknown License';
+        }
         if ((node.hasOwnProperty('open_source') && !node.open_source) || (!node.github_data && !node.other_repo_url)) {
           return 'NotOpenSource';
         }
 
         if (node.github_data) {
-          return node.github_data.license;
+          return node.github_data.license || 'Unknown License';
         }
 
         return 'Unknown License';
@@ -176,7 +178,7 @@ async function main () {
         if (node.yahoo_finance_data) {
           return node.yahoo_finance_data.market_cap;
         }
-        if (node.crunchbase_data) {
+        if (node.crunchbase_data && node.crunchbase_data.funding && node.crunchbase_data.funding > 0) {
           return node.crunchbase_data.funding;
         }
         return 'N/A';
@@ -237,7 +239,7 @@ async function main () {
         bestPracticeBadgeId: (node.best_practice_data || {}).badge,
         bestPracticePercentage: (node.best_practice_data || {}).percentage,
         industries: (crunchbase_overrides[node.crunchbase] || {}).industries || (node.crunchbase_data || {}).industries || [],
-        enduser: isEndUser()
+        enduser: isEndUser(),
       });
     }
   });
@@ -249,6 +251,13 @@ async function main () {
       return el.linkedin.replace(/\?.*/, '');
     }
 
+
+    const hasStars = item.stars !== 'N/A' && item.stars !== 'Not Entered Yet';
+    const hasMarketCap = item.amount !== 'N/A' && item.amount !== 'Not Entered Yet';
+    item.starsPresent = hasStars;
+    item.starsAsText = hasStars ? formatNumber({integerSeparator: ','})(item.stars) : '';
+    item.marketCapPresent = hasMarketCap;
+    item.marketCapAsText = formatAmount(item.amount);
 
     if (item.crunchbase_data) {
       item.crunchbaseData.numEmployeesMin = item.crunchbaseData.num_employees_min;
@@ -280,6 +289,7 @@ async function main () {
     }
   });
 
+  settings.global.flags = settings.global.flags || {};
   if (settings.global.flags.companies) {
     // Handle companies in a special way
     const hasCompanyCategory = (function() {
@@ -394,10 +404,12 @@ async function main () {
   var hasWrongTwitterUrls = false;
   await Promise.mapSeries(itemsWithExtraFields, async function(item) {
     if (item.twitter && item.twitter.split('/').slice(-1)[0] === '') {
-      await failOnMultipleErrors(`${item.name} has a twitter ${item.twitter} which ends with /`);
-      hasWrongTwitterUrls = true;
+      item.twitter = item.twitter.slice(0, item.twitter.length - 1);
     }
-    if (item.twitter && item.twitter.indexOf('https://twitter.com/') !== 0 && item.twitter.indexOf('http://twitter.com/') !== 0) {
+    if (item.twitter && ( item.twitter.startsWith('https://mobile.twitter.com') || item.twitter.startsWith('http://mobile.twitter.com') )) {
+      item.twitter = 'https://twitter.com'+item.twitter.slice(item.twitter.lastIndexOf('/'))
+    }
+    if (item.twitter && item.twitter.indexOf('https://twitter.com/') !== 0 && item.twitter.indexOf('http://twitter.com/') !== 0 && item.twitter.indexOf('https://x.com/') !== 0 && item.twitter.indexOf('http://x.com/') !== 0) {
       await failOnMultipleErrors(`${item.name} has a twitter ${item.twitter} which does not start with https://twitter.com/ or http://twitter.com/`);
       hasWrongTwitterUrls = true;
     }
@@ -430,6 +442,33 @@ async function main () {
     await reportFatalErrors();
     require('process').exit(-1);
   }
+
+  var hasBadExtraFields = false;
+  if (settings.validator) {
+    const vm = require('vm');
+    const script = new vm.Script(settings.validator);
+    for (let item of itemsWithExtraFields) {
+      for (let field in item.extra || {}) {
+        const context = {
+          field: field,
+          value: item.extra[field],
+          error: ''
+        }
+        vm.createContext(context);
+        script.runInContext(context);
+        if (context.error) {
+          await failOnMultipleErrors(`${item.name} reports: ${context.error}`);
+          hasBadExtraFields = true;
+        }
+      }
+    }
+  }
+  if (hasBadExtraFields) {
+    await reportFatalErrors();
+    require('process').exit(-1);
+  }
+
+
 
 
   async function removeNonReferencedImages() {
@@ -693,14 +732,14 @@ async function main () {
   }
 
   const lookups = {
-    organization: pack(extractOptions('organization')),
-    landscape: pack(generateLandscapeHierarchy()),
-    license: pack(generateLicenses()),
-    headquarters: pack(generateHeadquarters()),
+    organization: extractOptions('organization'),
+    landscape: generateLandscapeHierarchy(),
+    license: generateLicenses(),
+    headquarters: generateHeadquarters(),
     crunchbaseSlugs: generateCrunchbaseSlugs(),
     languages: generateLanguages(),
-    companyTypes: pack(generateCompanyTypes()),
-    industries: pack(generateIndustries())
+    companyTypes: generateCompanyTypes(),
+    industries: generateIndustries()
   }
 
   require('fs').writeFileSync(`${projectPath}/data.json`, JSON.stringify(itemsWithExtraFields, null, 2));

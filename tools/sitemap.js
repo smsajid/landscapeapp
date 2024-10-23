@@ -1,12 +1,12 @@
-import { getLandscapeCategories } from '../src/utils/sharedItemsCalculator';
-import fields from '../src/types/fields';
-import { SitemapStream } from 'sitemap';
-import { projectPath, settings } from './settings';
-import path from 'path';
-const items = JSON.parse(require('fs').readFileSync(path.resolve(projectPath, 'data.json')));
-import _ from 'lodash';
-import { landscapeSettingsList } from "../src/utils/landscapeSettings";
+const path = require('path');
+const _ = require('lodash');
+const { SitemapStream } = require('sitemap');
 
+const { getLandscapeCategories }  = require('../src/utils/sharedItemsCalculator');
+const { fields } = require('../src/types/fields');
+const { projectPath, distPath, settings } = require('./settings');
+const items = JSON.parse(require('fs').readFileSync(path.resolve(projectPath, 'data.json')));
+const { landscapeSettingsList } = require("../src/utils/landscapeSettings");
 
 async function main() {
   const bigPictureElements = {};
@@ -30,7 +30,7 @@ async function main() {
     hostname: settings.global.website,
     cacheTime: 600 * 1000,
   });
-  const fileName = 'out/sitemap.xml'
+  const fileName = path.resolve(distPath, 'sitemap.xml');
   const writeStream = require('fs').createWriteStream(fileName);
   stream.pipe(writeStream);
 

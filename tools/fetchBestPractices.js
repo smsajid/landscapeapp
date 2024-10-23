@@ -1,16 +1,16 @@
-import colors from 'colors';
-import rp from 'request-promise';
-import retry from './retry';
-import rpRetry from './rpRetry';
-import Promise from 'bluebird';
-import _ from 'lodash';
-import errorsReporter from './reporter';
-import { settings, projectPath } from './settings';
-import path from 'path';
-import makeReporter from './progressReporter';
+const colors = require('colors');
+const Promise = require('bluebird');
+const _ = require('lodash');
+const path = require('path');
+const debug = require('debug')('bestpractices');
+
+const { errorsReporter } = require('./reporter');
+const { requestWithRetry } = require('./requestWithRetry');
+const { projectPath } = require('./settings');
+const { makeReporter } = require('./progressReporter');
+const { retry } = require('./retry');
 
 const { addError } = errorsReporter('bestpractices');
-const debug = require('debug')('bestpractices');
 
 const errorColor = colors.red;
 const cacheMiss = colors.green;
@@ -37,10 +37,9 @@ async function getLandscapeItems() {
 }
 
 async function fetchEntriesNoRetry() {
-  const maxNumber = 200;
+  const maxNumber = 300;
   const items = await Promise.map(_.range(1, maxNumber), async function(number) {
-    const result = await rpRetry({
-      json: true,
+    const result = await requestWithRetry({
       url: `https://bestpractices.coreinfrastructure.org/en/projects.json?page=${number}`
     });
     return result.map(x => ({
@@ -53,7 +52,7 @@ async function fetchEntriesNoRetry() {
 }
 
 async function fetchEntryNoRetry(url) {
-  let result = await rpRetry({
+  let result = await requestWithRetry({
     json: true,
     url: `https://bestpractices.coreinfrastructure.org/en/projects.json?pq=${encodeURIComponent(url)}`
   });
@@ -75,7 +74,7 @@ async function fetchEntry(url) {
   return await retry(() => fetchEntryNoRetry(url), 3);
 }
 
-export async function fetchBestPracticeEntriesWithFullScan({cache, preferCache}) {
+module.exports.fetchBestPracticeEntriesWithFullScan =  async function({cache, preferCache}) {
   const items = await getLandscapeItems();
   const errors = [];
   var fetchedEntries = null;
@@ -84,7 +83,7 @@ export async function fetchBestPracticeEntriesWithFullScan({cache, preferCache})
     if (!item.repo_url) {
       return null;
     }
-    const cachedEntry = _.find(cache, {repo_url: item.repo_url});
+    const cachedEntry = _.find(cache, (c) => c.repo_url.toLowerCase() === item.repo_url.toLowerCase());
     if (cachedEntry && preferCache) {
       debug(`Full scan: Cache found for ${item.repo_url}`);
       reporter.write('.');
@@ -93,10 +92,15 @@ export async function fetchBestPracticeEntriesWithFullScan({cache, preferCache})
     debug(`Full scan: Cache not found for ${item.repo_url}`);
     try {
       fetchedEntries = fetchedEntries || await fetchEntries();
-      const badge = _.find(fetchedEntries, {repo_url: item.repo_url});
+      let repo_url = item.repo_url;
+      let badge = _.find(fetchedEntries, (x) => x.repo_url.toLowerCase() === item.repo_url.toLowerCase());
+      if (!badge && item.project_org) {
+        repo_url = item.project_org;
+        badge = _.find(fetchedEntries, (x) => x.repo_url.toLowerCase() === item.project_org.toLowerCase());
+      }
       reporter.write(cacheMiss("*"));
       return ({
-        repo_url: item.repo_url,
+        repo_url: repo_url,
         badge: badge ? badge.id : false,
         percentage: badge ? badge.percentage : null
       });
@@ -114,7 +118,7 @@ export async function fetchBestPracticeEntriesWithFullScan({cache, preferCache})
   return result;
 }
 
-export async function fetchBestPracticeEntriesWithIndividualUrls({cache, preferCache}) {
+module.exports.fetchBestPracticeEntriesWithIndividualUrls = async function({cache, preferCache}) {
   const items = await getLandscapeItems();
   const errors = [];
   const reporter = makeReporter();
@@ -122,17 +126,25 @@ export async function fetchBestPracticeEntriesWithIndividualUrls({cache, preferC
     if (!item.repo_url) {
       return null;
     }
-    const cachedEntry = _.find(cache, {repo_url: item.repo_url});
+    let cachedEntry = _.find(cache, (c) => c.repo_url.toLowerCase() === item.repo_url.toLowerCase());
+    if (!cachedEntry && item.project_org) {
+      cachedEntry = _.find(cache, (c) => c.repo_url.toLowerCase() === item.project_org.toLowerCase());
+    }
     if (cachedEntry && preferCache) {
       reporter.write('.');
       return cachedEntry;
     }
     debug(`Individual scan: Cache not found for ${item.repo_url}`);
     try {
-      const badge = await fetchEntry(item.repo_url);
+      let repo_url = item.repo_url;
+      let badge = await fetchEntry(item.repo_url);
+      if (!badge && item.project_org) {
+        repo_url = item.project_org;
+        badge = await fetchEntry(item.project_org);
+      }
       reporter.write(cacheMiss("*"));
       return ({
-        repo_url: item.repo_url,
+        repo_url: repo_url,
         badge: badge ? badge.id : false,
         percentage: badge ? badge.percentage : null
       });
@@ -153,7 +165,7 @@ export async function fetchBestPracticeEntriesWithIndividualUrls({cache, preferC
 
 }
 
-export async function extractSavedBestPracticeEntries() {
+module.exports.extractSavedBestPracticeEntries =  async function extractSavedBestPracticeEntries() {
   const traverse = require('traverse');
   let source = [];
   try {

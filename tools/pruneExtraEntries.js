@@ -1,8 +1,9 @@
-import _ from 'lodash';
-import { landscape, saveLandscape } from "./landscape";
-import { processedLandscape } from "./processedLandscape";
-import { YahooFinanceClient } from "./apiClients";
-import errorsReporter from './reporter';
+const _ = require('lodash');
+
+const { landscape, saveLandscape } = require("./landscape");
+const { processedLandscape } = require("./processedLandscape");
+const { YahooFinanceClient } = require("./apiClients");
+const { errorsReporter } = require('./reporter');
 const { addFatal } = errorsReporter('general');
 
 function find({source, categoryName, subcategoryName, itemName}) {
@@ -26,8 +27,8 @@ const cleanupFile = async () => {
       _.each(subcategory.items, function(item) {
         const processed = find({source: processedLandscape, categoryName: category.name, subcategoryName: subcategory.name, itemName: item.name});
         if (!processed) {
-          addFatal(`FATAL: entry ${item.name} at ${category.name}/${subcategory.name} not found in the processed_landscape.yml`);
-          process.exit(1);
+          console.info(`SKIP: entry ${item.name} at ${category.name}/${subcategory.name} not found in the processed_landscape.yml`);
+          return;
         }
         const fn = function(s) {
           if (!s) {
@@ -35,7 +36,7 @@ const cleanupFile = async () => {
           }
           return s.split('/').slice(-1)[0];
         }
-        if (item.hasOwnProperty('twitter') && fn(processed.crunchbase_data.twitter) === fn(item.twitter)) {
+        if (item.hasOwnProperty('twitter') && fn((processed.crunchbase_data || {}).twitter) === fn(item.twitter)) {
           console.info(`Deleted ${item.twitter} twitter for ${item.name} because it is available from ${item.crunchbase}`);
           delete item.twitter;
         }

@@ -1,8 +1,17 @@
-const path = require('path');
-const generateIndex = require('./generateIndex')
-const run = function(x) {
-  console.info(require('child_process').execSync(x).toString())
+if (process.env.KEY3) {
+  require('fs').mkdirSync(process.env.HOME + '/.ssh', { recursive: true});
+  require('fs').writeFileSync(process.env.HOME + '/.ssh/bot3',
+    "-----BEGIN RSA PRIVATE KEY-----\n" +
+    process.env.KEY3.replace(/\s/g,"\n") +
+    "\n-----END RSA PRIVATE KEY-----\n\n"
+  );
+  require('fs').chmodSync(process.env.HOME + '/.ssh/bot3', 0o600);
+  console.info('Made a bot3 file');
 }
+
+const path = require('path')
+const { readdirSync, writeFileSync } = require('fs')
+const generateIndex = require('./generateIndex')
 const debug = function() {
   if (process.env.DEBUG_BUILD) {
     console.info.apply(console, arguments);
@@ -15,17 +24,13 @@ const pause = function(i) {
   })
 };
 
-console.info('starting', process.cwd());
-run('npm init -y');
-console.info('installing js-yaml', process.cwd());
-run('npm install js-yaml@4.0.0');
-const yaml = require('js-yaml');
+const yaml = require('./jsyaml');
 process.chdir('..');
-console.info('starting real script', process.cwd());
 const landscapesInfo = yaml.load(require('fs').readFileSync('landscapes.yml'));
 
-const dockerImage = 'netlify/build:xenial';
+const dockerImage = 'netlify/build:focal';
 const dockerHome = '/opt/buildhome';
+
 
 async function main() {
   const nvmrc = require('fs').readFileSync('.nvmrc', 'utf-8').trim();
@@ -60,7 +65,7 @@ ${process.env.BUILDBOT_KEY.replace(/\s/g,'\n')}
 
   // now our goal is to run this on a remote server. Step 1 - xcopy the repo
   const folder = new Date().getTime();
-  const remote = 'root@147.75.76.177';
+  const remote = 'root@147.75.199.15';
 
   const runRemote = async function(command) {
     const bashCommand = `
@@ -73,6 +78,24 @@ EOSSH
     const result = await runLocal(bashCommand);
     let newOutput = [];
     for (var l of result.text.split('\n')) {
+      if (l.match(/Counting objects: /)) {
+        continue;
+      }
+      if (l.match(/ExperimentalWarning: Custom ESM Loaders is an experimental feature./)) {
+        continue
+      }
+      if (l.match(/Compressing objects: /)) {
+        continue;
+      }
+      if (l.match(/Receiving objects: /)) {
+        continue;
+      }
+      if (l.match(/Resolving deltas: /)) {
+        continue;
+      }
+      if (l.match(/Could not resolve ".*?" in file/)) {
+        continue;
+      }
       newOutput.push(l);
       if (l.includes('mesg: ttyname failed: Inappropriate ioctl for device')) {
         newOutput = [];
@@ -142,7 +165,7 @@ EOSSH
 
   await runLocalWithoutErrors(`
       rm -rf dist || true
-      mkdir -p dist
+      mkdir -p dist netlify/functions
     `);
   await runRemoteWithoutErrors(`mkdir -p /root/builds`);
   await runRemoteWithoutErrors(`docker pull ${dockerImage}`);
@@ -153,7 +176,6 @@ EOSSH
   await runRemoteWithoutErrors(`chmod -R 777 /root/builds/${folder}`);
 
   // lets guarantee npm install for this folder first
-  const branch = process.env.BRANCH;
   {
     const buildCommand = [
       "(ls . ~/.nvm/nvm.sh || (curl -s -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.35.3/install.sh | bash >/dev/null))",
@@ -162,7 +184,8 @@ EOSSH
       `nvm use ${nvmrc}`,
       `npm install -g yarn --no-progress --silent`,
       `cd /opt/repo`,
-      `yarn >/dev/null`
+      `yarn >/dev/null`,
+      `yarn eslint`
     ].join(' && ');
     const npmInstallCommand = `
       mkdir -p /root/builds/${folder}_node
@@ -193,6 +216,7 @@ EOSSH
     const outputFolder = landscape.name + new Date().getTime();
     const buildCommand = [
       `cd /opt/repo`,
+      `git config --global --add safe.directory /opt/repo`,
       `. ~/.nvm/nvm.sh`,
       `nvm use`,
       `export NODE_OPTIONS="--unhandled-rejections=strict"`,
@@ -233,8 +257,12 @@ EOSSH
 
     output  = await runRemote(dockerCommand);
     output.landscape = landscape;
-    console.info(`Output from: ${output.landscape.name}, exit code: ${output.exitCode}`);
-    console.info(output.text);
+    if (output.exitCode) {
+      console.info(`Output from: ${output.landscape.name}, exit code: ${output.exitCode}`);
+      console.info(output.text);
+    } else {
+      console.info(`Done: ${output.landscape.name}`);
+    }
     if (output.exitCode === 255) { // a single ssh failure
       output  = await runRemote(dockerCommand);
       output.landscape = landscape;
@@ -247,9 +275,11 @@ EOSSH
 
     await runLocal(
       `
-      rsync -az -e "ssh -i /tmp/buildbot  -o StrictHostKeyChecking=no " ${remote}:/root/builds/${outputFolder}/dist/${landscape.name}/ dist/${landscape.name}
+      rsync -az --chmod=a+r -p -e "ssh -i /tmp/buildbot  -o StrictHostKeyChecking=no " ${remote}:/root/builds/${outputFolder}/dist/${landscape.name}/ dist/${landscape.name}
       `
     );
+
+    await runLocal(`mv dist/${landscape.name}/functions/* netlify/functions`)
 
     await runRemote(
       `
@@ -278,8 +308,14 @@ EOSSH
   require('fs').writeFileSync('dist/robots.html', robots);
   require('fs').copyFileSync(path.resolve(__dirname, '..', '_headers'), 'dist/_headers')
 
-  const redirects = landscapesInfo.landscapes.map(({ name }) => `/${name}/* /${name}/404.html 404`).join('\n')
-  require('fs').writeFileSync('dist/_redirects', redirects)
+  const notFoundRedirects = landscapesInfo.landscapes.map(({ name }) => `/${name}/* /${name}/404.html 404`)
+  const functionRedirects = readdirSync('netlify/functions').map(file => {
+    const prefixedName = file.replace(/\..*/, '')
+    const [landscape, functionName] = prefixedName.split('--')
+    const newPath = `/${landscape}/api/${functionName}`
+    return `${newPath} /.netlify/functions/${prefixedName} 200`
+  })
+  writeFileSync('dist/_redirects', [...functionRedirects, ...notFoundRedirects].join('\n'))
 
   require('fs').writeFileSync("dist/robots.txt", "User-agent: *");
   // comment below when about to test a googlebot rendering
@@ -288,24 +324,18 @@ EOSSH
   await runLocalWithoutErrors('cp -r dist netlify');
 
   if (process.env.BRANCH === 'master') {
+    console.info(await runLocal('git remote -v'));
     await runLocalWithoutErrors(`
       git config --global user.email "info@cncf.io"
       git config --global user.name "CNCF-bot"
       git remote rm github 2>/dev/null || true
-      git remote add github "https://$GITHUB_USER:$GITHUB_TOKEN@github.com/cncf/landscapeapp"
-      git fetch github
-      # git diff # Need to comment this when a diff is too large
-      git checkout -- .
-      npm version patch || npm version patch || npm version patch
-      git commit -m 'Update to a new version [skip ci]' --allow-empty --amend
-      git branch -D tmp || true
-      git checkout -b tmp
-      git push github HEAD:master || true
-      git push github HEAD:master --tags --force
-      echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ~/.npmrc
-      git diff
-      npm -q publish || (sleep 5 && npm -q publish) || (sleep 30 && npm -q publish)
-      echo 'Npm package published'
+      git remote add github "git@github.com:cncf/landscapeapp.git"
+      echo 1
+      GIT_SSH_COMMAND='ssh -i ~/.ssh/bot3 -o IdentitiesOnly=yes' git fetch github
+      echo 2
+      git --no-pager show HEAD
+      echo 3
+      GIT_SSH_COMMAND='ssh -i ~/.ssh/bot3 -o IdentitiesOnly=yes' git push github github/master:deploy
     `);
     // just for debug purpose
     //now we have a different hash, because we updated a version, but for build purposes we have exactly same npm modules

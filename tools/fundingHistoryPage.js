@@ -1,7 +1,9 @@
 // generates html and atom pages from dist/funding.json
-import millify from 'millify';
-import { settings, projectPath } from './settings'
-import path from 'path';
+const path = require('path');
+const { Feed } = require("feed");
+const { millify } = require('../src/utils/format');
+const { settings, projectPath } = require('./settings');
+
 const result = JSON.parse(require('fs').readFileSync(path.resolve(projectPath, 'dist/funding.json'), 'utf-8'));
 const base = settings.global.website;
 
@@ -35,7 +37,7 @@ const page = `
                  <td><a href="${item.link}" target="_blank" rel="noopener noreferrer">${item.name}</a></td>
                  <td>$${millify(item.currentAmount)}</td>
                  <td style="color: ${delta > 0 ? 'green' : 'red'}">$${millify(delta)}</td>
-                 <td>${settings.membership[item.membership].funding}</td>
+                 <td>${(settings.membership[item.membership] || { funding: 'no' }).funding}</td>
                  <td>${item.date}</td>
                  <td><a href="${item.url}" target="_blank" rel="noopener noreferrer">${item.name}</a></td>
                </tr>
@@ -47,7 +49,6 @@ const page = `
 require('fs').writeFileSync(path.resolve(projectPath, 'dist/funding.html'), page);
 
 
-import { Feed } from "feed";
 const feed = new Feed({
   title: "Funding changes",
   description: "That feed shows recent changes",

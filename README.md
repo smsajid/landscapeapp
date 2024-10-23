@@ -23,9 +23,10 @@
   - [Setting up our build server to speed up Netlify builds](#setting-up-our-build-server-to-speed-up-netlify-builds)
 - [Keeping Project Up to Date](#keeping-project-up-to-date)
 - [Embed landscape in a web site](#embed-landscape-in-a-web-site)
+- [Generating a Guide](#generating-a-guide)
 
 
-The landscapeapp is an upstream NPM [module](https://www.npmjs.com/package/interactive-landscape) that supports building interactive landscape websites such as the [CNCF Cloud Native Landscape](https://landscape.cncf.io) ([source](https://github.com/cncf/landscape)) and the [LF Artificial Intelligence Landscape](https://landscape.lfai.foundation) ([source](https://github.com/lfai/lfai-landscape)). The application is managed by [Dan Kohn](https://www.dankohn.com) of [CNCF](https://www.cncf.io) and is under active development by [Andrey Kozlov](https://github.com/ZeusTheTrueGod) (who did most of the development to date) and [Jordi Noguera](https://jordinl.com).
+The landscapeapp is an upstream NPM [module](https://www.npmjs.com/package/interactive-landscape) that supports building interactive landscape websites such as the [CNCF Cloud Native Landscape](https://landscape.cncf.io) ([source](https://github.com/cncf/landscape)) and the [LF Artificial Intelligence Landscape](https://landscape.lfai.foundation) ([source](https://github.com/lfai/lfai-landscape)). The application is under active development by [Andrey Kozlov](https://github.com/AndreyKozlov1984) and [Jordi Noguera](https://jordinl.com).
 
 In addition to creating fully interactive sites, the landscapeapp builds static images on each update. See examples in [ADOPTERS.md](ADOPTERS.md). All current [Linux Foundation](https://linuxfoundation.org) landscapes are listed in [landscapes.yml](landscapes.yml).
 
@@ -37,7 +38,8 @@ When creating new entries, the only 4 required fields are `name`, `homepage_url`
 - item:
   name: <entry name>
   homepage_url: <website for entry>
-  # url or filename if in hosted_logos folder. It's generally easier to have the landscape fetch an SVG by adding it's URL rather than saving it yourself in the hosted_logos folder, but if the logo changes at that URL the landscape build won't update automatically unless the logo file is deleted from cached_logos 
+  # filename in hosted_logos folder. Put the svg file into the hosted_logos
+  folder and reference its name.
   logo: <logo for entry> 
   crunchbase: <twitter for entry>
 ```  
@@ -53,7 +55,7 @@ Additional keys that can be set are defined below:
   project_org: 
   # additional repos for the project; will fetch stats if they start with https://github.com/
   additional_repos: 
-  # Stock Ticker for the organization of the project/entry; normally pulls from Crunchbase but can be overriden here. For delisted and many foreign countries, you'll need to add `stock_ticker` with the value to look up on Yahoo Finance to find the market cap.
+  # Stock Ticker for the organization of the project/entry; normally pulls from Crunchbase but can be overridden here. For delisted and many foreign countries, you'll need to add `stock_ticker` with the value to look up on Yahoo Finance to find the market cap.
   stock_ticker: 
   # description of the entry; if not set pulls from the GitHub repo description
   description: 
@@ -65,7 +67,7 @@ Additional keys that can be set are defined below:
   url_for_bestpractices: 
   # set to false if a repo_url is given but the entry is a project that isn't open source
   open_source: 
-  # allows mulitple entries with the same repo_url; set for each instance
+  # allows multiple entries with the same repo_url; set for each instance
   allow_duplicate_repo: 
   # set to true if you are using an anonymous organization. You will also need anonymous_organization set in settings.yml
   unnamed_organization: 
@@ -75,7 +77,7 @@ For some of the key, there is some guidance as listed below.
 
 ### Logos
 
-The most challenging part of creating a new landscape is finding SVG images for all projects and companies. These landscapes represent a valuable resource to a community in assembling all related projects, creating a taxonomy, and providing the up-to-date logos, and unfortunately, there are no shortcuts.
+The most challenging part of creating a new landscape is finding SVG images for all projects and companies. These landscapes represent a valuable resource to a community in assembling all related projects, creating a taxonomy, and providing up-to-date logos, and unfortunately, there are no shortcuts.
 
 Do *not* try to convert PNGs to SVGs. You can't automatically go from a low-res to a high-res format, and you'll just waste time and come up with a substandard result. Instead, invest your time finding SVGs and then (when necessary) having a graphic designer recreate images when high res ones are not available.
 
@@ -90,7 +92,7 @@ For new landscapes of any size, you will probably need a graphic artist to rebui
 
 If the project is hosted/sponsored by an organization but doesn't have a logo, best practice is to use that organization's logo with the title of the project underneath ( [example](https://landscape.cncf.io/selected=netflix-eureka) ). You can use a tool such as [Inkscape](https://inkscape.org/) to add the text.
 
-If you get an error with the image that it has a PNG embeded, you will need to find a different SVG that doesn't include a PNG or work with a graphic artist to rebuild the logo.
+If you get an error with the image that it has a PNG embedded, you will need to find a different SVG that doesn't include a PNG or work with a graphic artist to rebuild the logo.
 
 #### SVGs Can't Include Text
 
@@ -126,6 +128,8 @@ We require all landscape entries to include a [Crunchbase](https://www.crunchbas
 
 Using an external source for this info saves effort in most cases, because most organizations are already listed. Going forward, the data is being independently maintained and updated over time.
 
+If for certain reason Crunchbase should not be used - we rely on `organization: { name: 'My Organization Name' }` instead of a `crunchbase` field
+
 #### Overriding industries from Crunchbase
 
 To override industries returned from Crunchbase for a specific Crunchbase entry, add it to an `crunchbase_overrides` top-level entry on `landscape.yml`. For instance, the following will set `industries` for Linux Foundation to Linux and Cloud Computing:
@@ -156,7 +160,7 @@ The update server enhances the source data with the fetched data and saves the r
 If you want to create an interactive landscape for your project or organization:
 1. Note ahead of time that the hardest part of building a landscape is getting hi-res images for every project. You *cannot* convert from a PNG or JPEG into an SVG. You need to get an SVG, AI, or EPS file. When those aren't available, you will  need a graphic designer to recreate several images. Don't just use an auto-tracer to try to convert PNG to SVG because there is some artistry involved in making it look good. Please review this [primer](https://www.cncf.io/blog/2019/07/17/what-image-formats-should-you-be-using-in-2019/) on image formats. 
 2. Create a repo `youracronym-landscape` so it's distinct from other landscapes stored in the same directory. From inside your new directory, copy over files from a simpler landscape like https://github.com/graphql/graphql-landscape with `cp -r ../graphql-landscape/* ../graphql-landscape/.github ../graphql-landscape/.gitignore ../graphql-landscape/.npmrc ../graphql-landscape/.nvmrc .`.
-3. If you're working with the [LF](https://www.linuxfoundation.org/), give admin privileges to the new repo to [dankohn](https://github.com/dankohn) and write privleges to [AndreyKozlov1984](https://github.com/AndreyKozlov1984), [jordinl83](https://github.com/jordinl83), and [CNCF-Bot](https://github.com/CNCF-Bot) and ping Dan after creating an account at [slack.cncf.io](https://slack.cncf.io). Alex Contini and Dan are available there to help you recreate SVGs based on a PNG of the company's logo, if necessary, and to fix other problems.
+3. If you're working with the [LF](https://www.linuxfoundation.org/), give admin privileges to the new repo to [dankohn](https://github.com/dankohn) and write privileges to [AndreyKozlov1984](https://github.com/AndreyKozlov1984), [jordinl83](https://github.com/jordinl83), and [CNCF-Bot](https://github.com/CNCF-Bot) and ping Dan after creating an account at [slack.cncf.io](https://slack.cncf.io). Alex Contini and Dan are available there to help you recreate SVGs based on a PNG of the company's logo, if necessary, and to fix other problems.
 4. Set the repo to only support merge commits and turn off DCO support, since it doesn't work well with the GitHub web interface:
 ![image](https://user-images.githubusercontent.com/3083270/66166276-dd62ad00-e604-11e9-87db-fd9ae7a80d1a.png)
 5. Edit `settings.yml` and `landscape.yml` for your topic.
@@ -166,7 +170,7 @@ If you want to create an interactive landscape for your project or organization:
 
 ### API Keys
 
-You want to add the following to your `~/.bash_profile`. If you're with the LF, ask Dan Kohn on CNCF [Slack](https://slack.cncf.io) for the Crunchbase and Twitter keys.
+You want to add the following to your `~/.bash_profile`. If you're with the LF, ask someone on CNCF [Slack](https://slack.cncf.io) for the Crunchbase and Twitter keys.
 
 For the GitHub key, please go to https://github.com/settings/tokens and create a key (you can call it `personal landscape`) with *no* permissions. That is, don't click any checkboxes, because you only need to access public repos.
 
@@ -188,22 +192,6 @@ dev$ cd landscapeapp
 dev$ npm install -g yarn@latest
 dev$ yarn
 ```
-Now, to use the local landscapeapp you can add the following to your `~/.bash_profile` or `.zshrc`:
-```sh
-function y { export PROJECT_PATH=`pwd` && (cd ../landscapeapp && yarn run "$@")}
-export -f y
-# yf does a normal build and full test run
-alias yf='y fetch'
-alias yl='y check-links'
-alias yq='y remove-quotes'
-# yp does a build and then opens up the landscape in your browser ( can view the PDF and PNG files )
-alias yp='y build && y open:dist'
-# yo does a quick build and opens up the landscape in your browser
-alias yo='y open:src'
-alias a='for lpath in /Users/your-username/dev/{landscapeapp,cdf-landscape,lfai-landscape}; do echo $lpath; git -C $lpath pull -p; done; (cd /Users/your-username/dev/landscapeapp && yarn);'
-
-```
-Reload with `. ~/.bash_profile` and then use `yo`, `yf`, etc. to run functions on the landscape in your landscape directory. `a` will do a git pull on each of the project directories you specify and install any necessary node modules for landscapeapp.
 
 ### Adding to a google search console
   Go to the google search console, add a new property, enter the url of the
@@ -213,8 +201,8 @@ Reload with `. ~/.bash_profile` and then use `yo`, `yf`, etc. to run functions o
   an `html tag verification` option and copy a secret code from it and put it to
   the `settings.yml` of a given landscape project. Then commit the change to the default branch and
   wait till Netlify deploys the default branch. The key is named `google_site_veryfication` and it is
-  somewhere around line 14 in settings.yml. After netlify succesfully deploys
-  that dashbaord, verify the html tag in a google console. Do not forget to add
+  somewhere around line 14 in settings.yml. After netlify successfully deploys
+  that dashboard, verify the html tag in a google console. Do not forget to add
   Dan@linuxfoundation.org as someone who has a full access from a `Settings`
   menu for a given search console.
 
@@ -362,3 +350,31 @@ You can embed the landscape in a website in a few different ways...
 <iframe src="https://landscape.openmainframeproject.org/category=open-mainframe-project-member-company&amp;format=logo-mode&amp;grouping=category&amp;embed=yes" frameborder="0" id="landscape" scrolling="no" style="width: 1px; min-width: 100%; opacity: 1; visibility: visible; overflow: hidden; height: 1717px;"></iframe>
 <script src="https://landscape.openmainframeproject.org/iframeResizer.js"></script>
 ```
+
+## Generating a Guide
+
+A Guide can be generated by adding a file `guide.md`. `guide.md` will be mostly regular markdown with some custom behavior:
+
+### No headings level 1 allowed
+
+No [Headings](https://www.markdownguide.org/basic-syntax/#headings) level 1 allowed, use level 2 or higher.
+
+### Linking a category from the landscape to a section on the guide
+
+If a section on the guide refers to a category on the landscape, an info icon will be added on the category on the landscape and such icon will redirect to the entry on the guide for that category.
+
+In order to associate the category and the section on the guide, the section on the guide should be wrapped between `<section data-category="$categoryId">` and `</section>`, where `$categoryId` is the id of the category. 
+
+Don't include a title for the section, a level 2 heading will be automatically generated using the name of the category.
+
+### Linking a subcategory from the landscape to a section on the guide
+
+If a section on the guide refers to a subcategory on the landscape, an info icon will be added on the subcategory on the landscape and such icon will redirect to the entry on the guide for that subcategory.
+
+In order to associate the subcategory and the section on the guide, the section on the guide should be wrapped between `<section data-subcategory="$subcategoryId" data-buzzwords="$buzzword1,$buzzword2">` and `</section>`, where `$subcategoryId` is the id of the subcategory. Buzzwords is a comma-separated list of words that describe the subcategory, a table will be automatically generated at the bottom of the section including those buzzwords and the list of projects hosted by the organization. The cards with all the logos for that subcategory will also be included at the bottom of the section.
+
+Don't include a title for the section, level 3 heading will be automatically generated using the name of the subcategory.
+
+### Automatic generation of guide navigation
+
+The guide will include a side-navigation generated automatically from all the headings levels 2 and 3 found on the guide. Level 3 headings will be nested under the closest level 2 heading above. 

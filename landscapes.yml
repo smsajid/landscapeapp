@@ -1,13 +1,29 @@
-ip: 147.75.106.211
+ip: 147.75.72.237
 landscapes:
   # name: how we name a landscape project, used on a build server for logs and settings
   # repo: a github repo for a specific landscape
   # netlify: full | skip - do we build it on a netlify build or not
   # hook: - id for a build hook, so it will be triggered after a default branch build
   - landscape:
-    name: cncf
-    repo: cncf/landscape
-    hook: 5c1bd968fdd72a78a54bdcd1
+    name: lfedge
+    repo: State-of-the-Edge/lfedge-landscape
+    hook: 5c80e31894c5c7758edb31e4
+  - landscape:
+    name: lfenergy
+    repo: lf-energy/lfenergy-landscape
+    hook: 606487bb9da603110d4b8139
+  - landscape:
+    name: lf
+    repo: jmertic/lf-landscape
+    hook: 606487123224e20fb8f3896e
+  - landscape:
+    name: dlt
+    repo: dltlandscape/dlt-landscape
+    hook: demo
+  - landscape:
+    name: aswf-landscape
+    repo: AcademySoftwareFoundation/aswf-landscape
+    hook: 608aa68eb6e5723d5d8a7e00
     required: true
   - landscape:
     name: cdf
@@ -28,22 +44,10 @@ landscapes:
     hook: 5d5c7ccf64ecb5bd3d2592f7
     required: true
   - landscape:
-    name: lf
-    repo: jmertic/lf-landscape
-    hook: 5ed4f433987c7ad56b356a74
-  - landscape:
     name: lfai
     repo: lfai/landscape
-    hook: 5ee219e3a8ae10e0246a9533
+    hook: 60648e5b74c76017210a2f53
     required: true
-  - landscape:
-    name: lfedge
-    repo: State-of-the-Edge/lfedge-landscape
-    hook: 5c80e31894c5c7758edb31e4
-  - landscape:
-    name: lfenergy
-    repo: lf-energy/lfenergy-landscape
-    hook: 5d98c95de9ff92d31e713003
   - landscape:
     name: lfph
     repo: lfph/lfph-landscape
@@ -52,11 +56,11 @@ landscapes:
   - landscape:
     name: omp
     repo: openmainframeproject/omp-landscape
-    hook: 5d6a6f73080982abfbd46290
+    hook: 6064862525138e14cfe87a39
   - landscape:
-    name: ospo
-    repo: todogroup/ospolandscape
-    hook: 6033b43a2572da242aee6a92
+    name: openssf
+    repo: ossf/ossf-landscape
+    hook: 613768338a16cb9182b21c3d
   - landscape:
     name: presto
     repo: prestodb/presto-landscape
@@ -73,3 +77,7 @@ landscapes:
     name: lfn
     repo: lfnetworking/member_landscape
     hook: 60788f5fa3cbd68181e3c209
+  - landscape:
+    name: riscv
+    repo: riscv-admin/riscv-landscape
+    hook: demo

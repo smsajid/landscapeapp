@@ -1,7 +1,8 @@
-import _ from 'lodash';
-import path from 'path';
-import { projectPath } from './settings';
-import { dump } from './yaml';
+const _ = require('lodash');
+const path = require('path');
+
+const { projectPath } = require('./settings');
+const { dump } = require('./yaml');
 
 const cleanupFile = function(filename, orderKeys) {
   const source = require('js-yaml').load(require('fs').readFileSync(path.resolve(projectPath, filename)));
@@ -24,10 +25,12 @@ const cleanupFile = function(filename, orderKeys) {
 
 const landscapeKeys = [
   'name',
+  'second_path',
   'description',
   'homepage_url',
   'project',
   'repo_url',
+  'license',
   'branch',
   'project_org',
   'url_for_bestpractices',
@@ -38,7 +41,11 @@ const landscapeKeys = [
   'open_source',
   'twitter',
   'crunchbase',
-  'allow_duplicate_repo'
+  'allow_duplicate_repo',
+  'joined',
+  'extra',
+  'organization',
+  'unnamed_organization'
 ];
 cleanupFile('landscape.yml', landscapeKeys);
 cleanupFile('settings.yml');

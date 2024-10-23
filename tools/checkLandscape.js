@@ -1,19 +1,22 @@
-import './suppressAnnoyingWarnings';
-import _ from 'lodash';
-import Promise from 'bluebird';
-import { settings } from './settings';
-import { hasFatalErrors, setFatalError, reportFatalErrors } from './fatalErrors';
-const urls = _.map(settings.big_picture, (section) => section.url);
-const port = process.env.PORT || '4000';
+const Promise = require('bluebird');
+const puppeteer = require('puppeteer');
+
+require('./suppressAnnoyingWarnings');
+const { landscapeSettingsList } = require('../src/utils/landscapeSettings');
+const { setFatalError, reportFatalErrors } = require('./fatalErrors');
+const { appUrl } = require('./distSettings');
+
 async function main() {
-  const puppeteer = require('puppeteer');
-  console.info('go!');
   const browser = await puppeteer.launch({args: ['--no-sandbox', '--disable-setuid-sandbox']});
   const page = await browser.newPage();
   var hasErrors = false;
-  for (var format of urls) {
-    await page.goto(`http://localhost:${port}/format=${format}`);
-    await Promise.delay(10000);
+  for (const { basePath } of landscapeSettingsList) {
+    const path = `/${basePath || ''}`
+    const response = await page.goto(`${appUrl}${path}`);
+    if (response.status() !== 200) {
+      throw `[yarn check-landscape]: cannot load URL "${path}"`
+    }
+    await Promise.delay(20000);
     const errors = await page.evaluate( function() {
       var result = [];
       var sections = document.querySelectorAll('.big-picture-section');
@@ -36,9 +39,9 @@ async function main() {
     });
     if (errors.length > 0) {
       for (var error of errors) {
-        setFatalError(`Page: ${format}, section ${error} is out of bound`);
+        setFatalError(`Page: ${path}, section ${error} is out of bound`);
       }
-      console.info(`FATAL ERROR: layout issues. On a ${format} page, following section(s) has their items out of bounds:`);
+      console.info(`FATAL ERROR: layout issues. On a ${path} page, following section(s) has their items out of bounds:`);
       console.info(errors);
       hasErrors = true;
     }

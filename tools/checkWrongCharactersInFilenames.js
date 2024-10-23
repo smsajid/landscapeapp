@@ -1,10 +1,9 @@
-import _ from 'lodash';
-import path from 'path';
-import Promise from 'bluebird';
-import { projectPath, settings } from './settings';
-import { dump } from './yaml';
+const _ = require('lodash');
+const path = require('path');
 
-import { hasFatalErrors, setFatalError, reportFatalErrors } from './fatalErrors';
+const { projectPath } = require('./settings');
+const { dump } = require('./yaml');
+const { hasFatalErrors, setFatalError, reportFatalErrors } = require('./fatalErrors');
 
 function hasNonAscii(str) {
     return ! /^[\x00-\x7F]*$/.test(str);
@@ -49,19 +48,21 @@ async function main() {
   _.each(processedSource.landscape, function(category) {
     _.each(category.subcategories, function(subcategory) {
       _.each(subcategory.items, function(item) {
-        const logo = item.image_data.fileName;
-        const processedLogo = _.deburr(logo);
-        if (hasNonAscii(processedLogo)) {
-          const error = `FATAL: entry ${item.name} has non ascii characters in a logo ${logo}`;
-          console.info(error);
-          setFatalError(error);
-        }
-        else if (logo !== processedLogo) {
-          item.image_data.fileName = processedLogo;
-          const oldFile = path.resolve(projectPath, 'cached_logos', logo);
-          const newFile = path.resolve(projectPath, 'cached_logos', processedLogo);
-          require('fs').renameSync(oldFile, newFile);
-          console.info(`RENAMED: ${logo} => ${processedLogo}`);
+        if (item.image_data) {
+          const logo = item.image_data.fileName;
+          const processedLogo = _.deburr(logo);
+          if (hasNonAscii(processedLogo)) {
+            const error = `FATAL: entry ${item.name} has non ascii characters in a logo ${logo}`;
+            console.info(error);
+            setFatalError(error);
+          }
+          else if (logo !== processedLogo) {
+            item.image_data.fileName = processedLogo;
+            const oldFile = path.resolve(projectPath, 'cached_logos', logo);
+            const newFile = path.resolve(projectPath, 'cached_logos', processedLogo);
+            require('fs').renameSync(oldFile, newFile);
+            console.info(`RENAMED: ${logo} => ${processedLogo}`);
+          }
         }
       });
     });

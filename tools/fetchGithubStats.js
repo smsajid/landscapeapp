@@ -1,17 +1,18 @@
-import colors from 'colors';
+const colors = require('colors');
 const Promise = require('bluebird');
-import _ from 'lodash';
-import { parse } from 'querystring'
-import errorsReporter from './reporter';
-import makeReporter from './progressReporter';
+const _ = require('lodash');
+const { parse } = require('querystring');
 const debug = require('debug')('github');
-import shortRepoName from '../src/utils/shortRepoName';
-import getRepositoryInfo , { getLanguages, getWeeklyContributions}  from './getRepositoryInfo';
-import { cacheKey, fetchGithubOrgs, getRepos } from './repos'
-import { GithubClient} from './apiClients'
+
+const { errorsReporter } = require('./reporter');
+const { makeReporter } = require('./progressReporter');
+const { shortRepoName } = require('../src/utils/shortRepoName');
+const { getRepositoryInfo , getLanguages, getWeeklyContributions} = require('./getRepositoryInfo');
+const { cacheKey, fetchGithubOrgs, getRepos } = require('./repos');
+const { GithubClient} = require('./apiClients');
 
 const { addError, addFatal } = errorsReporter('github');
-import { getRepoLatestDate, getReleaseDate } from './githubDates';
+const { getRepoLatestDate, getReleaseDate } = require('./githubDates');
 
 const githubColors = JSON.parse(require('fs').readFileSync('tools/githubColors.json', 'utf-8'));
 
@@ -23,17 +24,17 @@ const getContributorsCount = async repo => {
   const per_page = 100
   const path = `/repos/${repo}/contributors`
   const request = ({ page = 1 } = {}) => GithubClient.request({ path, params: { page, per_page, anon: 1 }, resolveWithFullResponse: true })
-  const { body, headers } = await request()
+  const { data, headers } = await request()
 
   let totalPages, lastPageContributors
 
   if (headers.link) {
     const lastPageUrl = headers.link.split(',').find(s => s.indexOf('last') > -1).split(';')[0].replace(/[<>]/g, '')
     totalPages = parseInt(parse(lastPageUrl.split('?')[1]).page)
-    lastPageContributors = (await request({ page: totalPages })).body
+    lastPageContributors = (await request({ page: totalPages })).data
   } else {
     totalPages = 1
-    lastPageContributors = body
+    lastPageContributors = data
   }
 
   return (totalPages - 1) * per_page + lastPageContributors.length
@@ -47,13 +48,20 @@ const getContributorsList = async (repo, page = 1) => {
   return contributors.concat(contributors.length === per_page ? await getContributorsList(repo, page + 1) : [])
 }
 
-export async function fetchGithubEntries({cache, preferCache}) {
-  const githubOrgs = (await fetchGithubOrgs(preferCache))
-    .map(org => ({ ...org.data, ...org.github_data }))
-  const repos = [...getRepos(), ...githubOrgs.filter(org => !org.cached).map(org => org.repos).flat()]
-  debug(cache);
+module.exports.fetchGithubEntries = async function({cache, preferCache}) {
   const errors = [];
   const fatalErrors = [];
+  const githubOrgs = (await fetchGithubOrgs(preferCache))
+    .map(org => ({ ...org.data, ...org.github_data }))
+
+  githubOrgs.forEach(org => {
+    if (org.repos.length === 0) {
+      fatalErrors.push(`Organization ${org.url} does not have any repos or all repos are empty`)
+    }
+  })
+
+  const repos = [...getRepos(), ...githubOrgs.filter(org => !org.cached).map(org => org.repos).flat()]
+  debug(cache);
   const reporter = makeReporter();
   const result = await Promise.map(repos, async function(repo) {
     const cachedEntry = cache[cacheKey(repo.url, repo.branch)]

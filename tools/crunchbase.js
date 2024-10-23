@@ -1,22 +1,24 @@
-import colors from 'colors';
-import Promise from 'bluebird'
-import _ from 'lodash';
-import ensureHttps from './ensureHttps';
-import errorsReporter  from './reporter';
-import { projectPath } from './settings';
-import path from 'path';
-import makeReporter from './progressReporter';
+const colors = require('colors');
+const Promise = require('bluebird');
+const _ = require('lodash');
+const path = require('path');
+const debug = require('debug')('cb');
+
+const { ensureHttps } = require('./ensureHttps');
+const { errorsReporter } = require('./reporter');
+const { projectPath } = require('./settings');
+const { makeReporter } = require('./progressReporter');
+const { CrunchbaseClient, YahooFinanceClient } = require('./apiClients');
+
 const error = colors.red;
 const fatal = (x) => colors.red(colors.inverse(x));
 const cacheMiss = colors.green;
-const debug = require('debug')('cb');
-import { CrunchbaseClient, YahooFinanceClient } from './apiClients';
-
 const { addError, addFatal } = errorsReporter('crunchbase');
 
 const EXCHANGE_SUFFIXES = {
   'ams': 'AS', // Amsterdam
   'bit': 'MI', // Milan
+  'bme': 'MC', // Madrid
   'epa': 'PA', // Paris
   'etr': 'DE', // XETRA
   'fra': 'F',  // Frankfurt
@@ -25,10 +27,12 @@ const EXCHANGE_SUFFIXES = {
   'krx': 'KS', // South Korea
   'lse': 'L', // London
   'moex': 'ME', // Moscow
+  'mcx': 'ME', // Alternate code for Moscow
   'nse': 'NS', // India
   'sse': 'SS', // Shanghai
   'swx': 'SW', // Zurich
   'szse': 'SZ',  // Shenzhen
+  'tpe': 'TW', // Taipei
   'tyo': 'T', // Tokyo
   'vie': 'VI', // Viena
 }
@@ -39,7 +43,7 @@ const getSymbolWithSuffix = (symbol, exchange) => {
   return [symbol, exchangeSuffix].filter(_ => _).join('.')
 }
 
-export async function getCrunchbaseOrganizationsList() {
+const getCrunchbaseOrganizationsList = module.exports.getCrunchbaseOrganizationsList = async function() {
   const traverse = require('traverse');
   const source = require('js-yaml').load(require('fs').readFileSync(path.resolve(projectPath, 'landscape.yml')));
   var organizations = [];
@@ -63,7 +67,7 @@ export async function getCrunchbaseOrganizationsList() {
   return _.orderBy(_.uniq(organizations), 'name');
 }
 
-export async function extractSavedCrunchbaseEntries() {
+module.exports.extractSavedCrunchbaseEntries = async function() {
   const traverse = require('traverse');
   let source = [];
   try {
@@ -132,19 +136,24 @@ const fetchCrunchbaseOrganization = async id => {
   });
 }
 
-export async function fetchData(name) {
+const fetchData = module.exports.fetchData = async function(name) {
   const result = await fetchCrunchbaseOrganization(name)
   const mapAcquisitions = function(a) {
-    const result = {
-      date: a.announced_on.value,
-      acquiree: a.acquiree_identifier.value,
+    let result1;
+    try {
+      result1 = {
+        date: a.announced_on.value,
+        acquiree: a.acquiree_identifier.value,
+      }
+      if (a.price) {
+        result.price = a.price.value_usd
+      }
+    } catch(ex) {
+      return null;
     }
-    if (a.price) {
-      result.price = a.price.value_usd
-    }
-    return result;
+    return result1;
   }
-  let acquisitions = result.cards.acquiree_acquisitions.map(mapAcquisitions);
+  let acquisitions = result.cards.acquiree_acquisitions.map(mapAcquisitions).filter( (x) => !!x);
   const limit = 100;
   let lastPage = result;
   while (lastPage.cards.acquiree_acquisitions.length === limit) {
@@ -162,7 +171,8 @@ export async function fetchData(name) {
     const parentOrganization = lastOrganization.cards.parent_organization[0].identifier.permalink
     if (parents.map(p => p.identifier.permalink).includes(parentOrganization)) {
       const { permalink } = lastOrganization.properties.identifier
-      throw new Error(`Circular dependency detected: ${permalink} and ${parentOrganization} are parents of each other`)
+      console.info(`Circular dependency detected: ${permalink} and ${parentOrganization} are parents of each other`)
+      break;
     }
     lastOrganization = await fetchCrunchbaseOrganization(parentOrganization)
     parents.push({ ...lastOrganization.properties, delisted: isDelisted(lastOrganization) })
@@ -175,6 +185,9 @@ export async function fetchData(name) {
   const totalFunding = firstWithTotalFunding ? + firstWithTotalFunding.funding_total.value_usd.toFixed() : undefined;
 
   const getAddressPart = function(part) {
+    if (!result.cards.headquarters_address[0]) {
+      return " N/A";
+    }
     return (result.cards.headquarters_address[0].location_identifiers.filter( (x) => x.location_type === part)[0] || {}).value
   }
 
@@ -188,10 +201,6 @@ export async function fetchData(name) {
       return { employeesMin: + parts[1], employeesMax: parts[2] === 'max' ? 1000000 : + parts[2] }
     }
   })();
-
-  if (!result.cards.headquarters_address[0]) {
-    return 'no address';
-  }
 
   return {
     name: result.properties.name,
@@ -214,7 +223,7 @@ export async function fetchData(name) {
   }
 }
 
-export async function fetchCrunchbaseEntries({cache, preferCache}) {
+module.exports.fetchCrunchbaseEntries = async function({cache, preferCache}) {
   // console.info(organizations);
   // console.info(_.find(organizations, {name: 'foreman'}));
   const reporter = makeReporter();
@@ -234,11 +243,6 @@ export async function fetchCrunchbaseEntries({cache, preferCache}) {
     }
     try {
       const result = await fetchData(c.name);
-      if (result === 'no address') {
-        fatalErrors.push(`no headquarter addresses for ${c.name} at ${c.crunchbase}`);
-        reporter.write(fatal("F"));
-        return null;
-      }
 
       const entry = {
         url: c.crunchbase,
@@ -253,8 +257,12 @@ export async function fetchCrunchbaseEntries({cache, preferCache}) {
       if (!(c.ticker === null) && (entry.ticker || c.ticker)) {
         // console.info('need to get a ticker?');
         entry.effective_ticker = c.ticker || entry.ticker;
-        entry.market_cap = await getMarketCap(entry.effective_ticker, entry.stockExchange);
-        entry.kind = 'market_cap';
+        try {
+          entry.market_cap = await getMarketCap(entry.effective_ticker, entry.stockExchange);
+          entry.kind = 'market_cap';
+        } catch(ex) {
+          console.info(`Skipping market cap calculation`);
+        }
       } else if (entry.funding) {
         entry.kind = 'funding';
       } else {
@@ -264,6 +272,7 @@ export async function fetchCrunchbaseEntries({cache, preferCache}) {
       return entry;
       // console.info(entry);
     } catch (ex) {
+      console.info(ex);
       if (cachedEntry) {
         errors.push(`Using cached entry, because can not fetch: ${c.name} ` +  ex.message.substring(0, 200));
         reporter.write(error("E"));

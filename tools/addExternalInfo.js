@@ -1,27 +1,27 @@
-import checkVersion from './checkVersion';
-import { hasFatalErrors, reportFatalErrors } from './fatalErrors';
-import errorsReporter from './reporter';
-import process from 'process';
-import path from 'path';
-import { projectPath, settings } from './settings';
-import actualTwitter from './actualTwitter';
-import { extractSavedImageEntries, fetchImageEntries, removeNonReferencedImages } from './fetchImages';
-import { extractSavedCrunchbaseEntries, fetchCrunchbaseEntries } from './crunchbase';
-import { fetchGithubEntries } from './fetchGithubStats';
-import { getProcessedRepos, getProcessedReposStartDates } from './repos';
-import { fetchStartDateEntries } from './fetchGithubStartDate';
-import { extractSavedTwitterEntries, fetchTwitterEntries } from './twitter';
-import {
+const path = require('path');
+const traverse = require('traverse');
+const _ = require('lodash');
+
+const { checkVersion } = require('./checkVersion');
+const { hasFatalErrors, reportFatalErrors } = require('./fatalErrors');
+const { errorsReporter } = require('./reporter');
+const { projectPath, settings } = require('./settings');
+const { actualTwitter } = require('./actualTwitter');
+const { extractSavedImageEntries, fetchImageEntries, removeNonReferencedImages } = require('./fetchImages');
+const { extractSavedCrunchbaseEntries, fetchCrunchbaseEntries } = require('./crunchbase');
+const { fetchGithubEntries } = require('./fetchGithubStats');
+const { getProcessedRepos, getProcessedReposStartDates } = require('./repos');
+const { fetchStartDateEntries } = require('./fetchGithubStartDate');
+const { fetchCloEntries } = require('./fetchCloData');
+const { extractSavedTwitterEntries, fetchTwitterEntries } = require('./twitter');
+const {
   extractSavedBestPracticeEntries,
   fetchBestPracticeEntriesWithFullScan,
   fetchBestPracticeEntriesWithIndividualUrls
-} from './fetchBestPractices';
-import shortRepoName from '../src/utils/shortRepoName';
-import { updateProcessedLandscape } from "./processedLandscape";
-
+} = require('./fetchBestPractices');
+const { shortRepoName } = require('../src/utils/shortRepoName');
+const { updateProcessedLandscape } = require("./processedLandscape");
 const { landscape } = require('./landscape')
-const traverse = require('traverse');
-const _ = require('lodash');
 const { addFatal } = errorsReporter('crunchbase');
 
 var useCrunchbaseCache = true;
@@ -30,7 +30,8 @@ var useGithubCache = true;
 var useGithubStartDatesCache = true;
 var useTwitterCache = true;
 var useBestPracticesCache = true;
-var key = require('process').env.LEVEL || 'easy';
+var key = process.env.LEVEL || 'easy';
+
 function reportOptions() {
   console.info(`Running with a level=${key}. Settings:
      Use cached crunchbase data: ${useCrunchbaseCache}
@@ -43,11 +44,15 @@ function reportOptions() {
 }
 if (key.toLowerCase() === 'easy') {
   reportOptions();
+} else if (key.toLowerCase() === 'crunchbase') {
+
+  useCrunchbaseCache = false;
+  reportOptions();
 }
 else if (key.toLowerCase() === 'medium') {
   useTwitterCache=false;
   useGithubCache=false;
-  useCrunchbaseCache=false;
+  useCrunchbaseCache=true;
   useBestPracticesCache=false;
   reportOptions();
 }
@@ -164,11 +169,12 @@ async function main() {
 
   console.info('Fetching last tweet dates');
   const savedTwitterEntries = await extractSavedTwitterEntries();
-  const twitterEntries = await fetchTwitterEntries({
-    cache: savedTwitterEntries,
-    preferCache: useTwitterCache,
-    crunchbaseEntries: crunchbaseEntries
-  });
+
+  // const twitterEntries = await fetchTwitterEntries({
+    // cache: savedTwitterEntries,
+    // preferCache: useTwitterCache,
+    // crunchbaseEntries: crunchbaseEntries
+  // });
 
   if (hasFatalErrors()) {
     console.info('Reporting fatal errors');
@@ -184,6 +190,10 @@ async function main() {
     cache: savedBestPracticeEntries,
     preferCache: useBestPracticesCache
   });
+  require('fs').writeFileSync('/tmp/bp.json', JSON.stringify(bestPracticeEntries, null, 4));
+
+  console.info('Fetching CLOMonitor data');
+  const cloEntries = await fetchCloEntries();
 
   const tree = traverse(landscape);
   console.info('Processing the tree');
@@ -221,7 +231,7 @@ async function main() {
           .sort((a, b) => b.stars - a.stars)
         const repos = [mainRepo, ...additionalRepos].filter( (x) => !!x);
 
-        if (repos.length > 1 && !githubEntry.cached) {
+        if ((node.project_org || node.additional_repos) && repos.length > 0 && !githubEntry.cached) {
           node.github_data.contributors_count = aggregateContributors(repos)
           node.github_data.contributions = aggregateContributions(repos)
           node.github_data.stars = repos.reduce((acc, { stars }) => acc + stars, 0)
@@ -231,7 +241,7 @@ async function main() {
           node.github_data.latest_commit_link = latest_commit_link
           node.github_data.latest_commit_date = latest_commit_date
           node.github_data.firstWeek = repos[0].firstWeek
-          node.github_data.license = repos[0].license
+          node.github_data.license = node.license || repos[0].license
           node.github_data.contributors_link = repos[0].contributors_link
         }
 
@@ -309,10 +319,9 @@ async function main() {
       }
       node.best_practice_data = bestPracticeEntry;
       delete node.best_practice_data.repo_url;
-      // twitter
+      //twitter
       const twitter = actualTwitter(node, node.crunchbase_data);
-
-      const twitterEntry = _.clone(_.find(twitterEntries, {
+      const twitterEntry = _.clone(_.find(savedTwitterEntries, {
         url: twitter
       }));
       if (twitterEntry) {
@@ -320,6 +329,11 @@ async function main() {
         delete twitterEntry.url;
       }
 
+      const cloEntry = _.clone(_.find(cloEntries, { clomonitor_name: node.extra?.clomonitor_name }));
+      // svg clomonitor
+      if (cloEntry) {
+        node.extra.clomonitor_svg = cloEntry.svg
+      }
     }
   });
 

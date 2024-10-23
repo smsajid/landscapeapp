@@ -1,16 +1,18 @@
-import _ from 'lodash';
-import errorsReporter, { getMessages } from './reporter';
+const _ = require('lodash');
+const axios = require('axios');
+
+const { errorsReporter, getMessages } = require('./reporter');
 const { addFatal } = errorsReporter('general');
 
-export function hasFatalErrors() {
+module.exports.hasFatalErrors = function() {
   return getMessages().filter( (x) => x.type === 'fatal') > 0;
 }
 
-export function setFatalError(errorText) {
+const setFatalError = module.exports.setFatalError = function(errorText) {
   addFatal(errorText);
 }
 
-export async function reportFatalErrors() {
+const reportFatalErrors = module.exports.reportFatalErrors = async function() {
   if (!process.env.GITHUB_TOKEN) {
     console.info(`Can not report fatal errors, GITHUB_TOKEN not provided`);
     return;
@@ -30,25 +32,25 @@ export async function reportFatalErrors() {
     console.info('This netlify build is not associated with a pull request, can not report an error back to the github');
     return;
   }
-  const rp = require('request-promise');
-  const uri = `https://api.github.com/repos/${repo}/issues/${pr}/comments`;
-  console.info(uri);
-  const output = await rp({
+  const url = `https://api.github.com/repos/${repo}/issues/${pr}/comments`;
+  console.info(url);
+  await axios({
     method: 'POST',
-    uri: uri,
+    url,
     headers: {
       'user-agent':'curl'
     },
     auth: {
-        'user': 'CNCF-Bot',
-        'pass': process.env.GITHUB_TOKEN
+        username: 'CNCF-Bot',
+        password: process.env.GITHUB_TOKEN
     },
-    body: JSON.stringify({ body: '<pre>' + _.escape(message) + '</pre>'})
+    data: { body: '<pre>' + _.escape(message) + '</pre>'}
   });
 }
 
 async function main() {
-  fatalErrors = ['FATAL: <div> *b* </div> error number 1', 'FATAL: error number 2'];
+  setFatalError('FATAL: <div> *b* </div> error number 1');
+  setFatalError('FATAL: error number 2');
   await reportFatalErrors();
 }
 // uncomment and set env vars to debug

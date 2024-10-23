@@ -1,8 +1,9 @@
-import { env } from 'process';
-import { stringify } from 'query-string';
-import requestPromise from 'request-promise';
-import _ from 'lodash'
-import Promise from "bluebird";
+const { env } = require('process');
+const { stringify, parse } = require('query-string');
+const axios = require('axios');
+const OAuth1 = require('oauth-1.0a');
+const crypto = require('crypto');
+const _ = require('lodash');
 
 ['GITHUB_KEY', 'TWITTER_KEYS'].forEach((key) => {
   if (!env[key]) {
@@ -15,7 +16,35 @@ let requests = {};
 const maxAttempts = 5
 const delay = 30000
 
-const requestWithRetry = async ({ attempts = maxAttempts, retryStatuses, delayFn, applyKey, keys, ...rest }) => {
+const getOauth1Header = config => {
+  const { method = 'GET', url = {}, params } = config
+  const data = parse(stringify(params))
+  const request = { method, url, data }
+  const { consumer_key, consumer_secret, access_token_key, access_token_secret } = config.oauth
+
+  const oauth = OAuth1({
+    consumer: {
+      key: consumer_key,
+      secret: consumer_secret,
+    },
+    signature_method: 'HMAC-SHA1',
+    hash_function(base_string, key) {
+      return crypto
+        .createHmac('sha1', key)
+        .update(base_string)
+        .digest('base64')
+    },
+  })
+
+  const authorization = oauth.authorize(request, {
+    key: access_token_key,
+    secret: access_token_secret,
+  });
+
+  return oauth.toHeader(authorization);
+}
+
+const requestWithRetry = async ({ attempts = maxAttempts, resolveWithFullResponse, retryStatuses, delayFn, applyKey, keys, ...rest }) => {
   if (!applyKey) {
     keys = [true];
     applyKey = () => true;
@@ -25,53 +54,66 @@ const requestWithRetry = async ({ attempts = maxAttempts, retryStatuses, delayFn
   for (var key of keys) {
     applyKey(rest, key);
     try {
-      return await requestPromise(rest);
+      axios.interceptors.request.use(function (config) {
+        const authHeader = config.oauth ? getOauth1Header(config) : {}
+        return { ...config, headers: { ...config.headers, ...authHeader } }
+      })
+
+      const response = await axios(rest);
+      return resolveWithFullResponse ? response : response.data
     } catch (ex) {
-      const { statusCode, options, error } = ex;
+
+      const { response = {}, ...error } = ex
+      const { status } = response
+
+      const isGithubIssue = (response?.data?.message || '').indexOf('is too large to list') !== -1;
+
       const message = [
         `Attempt #${maxAttempts - attempts + 1}`,
-        `(Status Code: ${statusCode})`,
-        `(URI: ${options.uri.split('?')[0]})`
+        `(Status Code: ${status || error.code})`,
+        `(URI: ${rest.url})`
       ].join(' ')
       if (key === keys[keys.length - 1]) {
         console.info(message);
+      } else {
+        console.info(`Failed to use key #${keys.indexOf(key)} of ${keys.length}`);
       }
-      const rateLimited = retryStatuses.includes(statusCode)
-      const dnsError = error && error.code === 'ENOTFOUND' && error.syscall === 'getaddrinfo'
-      if (attempts <= 0 || (!rateLimited && !dnsError)) {
+      const rateLimited = retryStatuses.includes(status)
+      const dnsError = error.code === 'ENOTFOUND' && error.syscall === 'getaddrinfo'
+      if (attempts <= 0 || (!rateLimited && !dnsError) || isGithubIssue) {
         throw ex;
       }
       lastEx = ex;
     }
   }
-  await Promise.delay(delayFn ? delayFn(lastEx) : delay);
+  await new Promise(r => setTimeout(r, delayFn ? delayFn(lastEx) : delay))
   return await requestWithRetry({ attempts: attempts - 1, retryStatuses, delayFn, ...rest });
 }
 
 // We only want to retry a request when rate limited. By default the status code is 429.
-const ApiClient = ({ baseUrl, applyKey, keys, defaultOptions = {}, defaultParams = {}, retryStatuses = [429], delayFn = null }) => {
+const ApiClient = ({ baseURL, applyKey, keys, defaultOptions = {}, defaultParams = {}, retryStatuses = [429], delayFn = null }) => {
   return {
-    request: async ({ path = null, url = null, method = 'GET', params = {}, ...rest }) => {
-      const qs = { ...defaultParams, ...params };
+    request: async ({ path = null, url = null, method = 'GET', params = {}, resolveWithFullResponse = false, ...rest }) => {
+      const queryParams = { ...defaultParams, ...params };
 
       if (path) {
-        url = `${baseUrl}${path[0] === '/' ? '' : '/' }${path}`;
+        url = `${baseURL}${path[0] === '/' ? '' : '/' }${path}`;
       }
 
-      const key = `${method} ${url}?${stringify(qs)}`;
+      const key = `${method} ${url}?${stringify(queryParams)}`;
 
       if (!requests[key]) {
         requests[key] = requestWithRetry({
           applyKey: applyKey,
           keys: keys,
           method: method,
-          uri: url,
-          json: true,
+          url: url,
+          params: queryParams,
           ...defaultOptions,
           ...rest,
-          qs,
           retryStatuses,
-          delayFn
+          delayFn,
+          resolveWithFullResponse
         })
       }
 
@@ -80,15 +122,15 @@ const ApiClient = ({ baseUrl, applyKey, keys, defaultOptions = {}, defaultParams
   }
 };
 
-export const CrunchbaseClient = ApiClient({
-  baseUrl: 'https://api.crunchbase.com/api/v4',
+module.exports.CrunchbaseClient = ApiClient({
+  baseURL: 'https://api.crunchbase.com/api/v4',
   defaultParams: { user_key: env.CRUNCHBASE_KEY_4 },
   defaultOptions: { followRedirect: true, maxRedirects: 5, timeout: 10 * 1000 }
 });
 
-export const GithubClient = ApiClient({
-  baseUrl: 'https://api.github.com',
-  retryStatuses: [403], // Github returns 403 when rate limiting.
+module.exports.GithubClient = ApiClient({
+  baseURL: 'https://api.github.com',
+  retryStatuses: [401, 403], // Github returns 403 when rate limiting.
   delayFn: error => {
     const rateLimitRemaining = parseInt(_.get(error, ['response', 'headers', 'x-ratelimit-remaining'], 1))
     const rateLimitReset = parseInt(_.get(error, ['response', 'headers', 'x-ratelimit-reset'], 1)) * 1000
@@ -113,8 +155,8 @@ export const GithubClient = ApiClient({
 
 const [consumerKey, consumerSecret, accessTokenKey, accessTokenSecret] = (env.TWITTER_KEYS || '').split(',');
 
-export const TwitterClient = ApiClient({
-  baseUrl: 'https://api.twitter.com/1.1',
+module.exports.TwitterClient = ApiClient({
+  baseURL: 'https://api.twitter.com/1.1',
   defaultOptions: {
     oauth: {
       consumer_key: consumerKey,
@@ -125,6 +167,6 @@ export const TwitterClient = ApiClient({
   }
 });
 
-export const YahooFinanceClient = ApiClient({
-  baseUrl: 'https://query2.finance.yahoo.com',
+module.exports.YahooFinanceClient = ApiClient({
+  baseURL: 'https://query2.finance.yahoo.com',
 });

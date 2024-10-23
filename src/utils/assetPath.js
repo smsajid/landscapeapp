@@ -1,5 +1,8 @@
-const assetPath = path => {
-  return `${process.env.basePath}${path[0] === '/' ? '' : '/'}${path}`
-}
+const { getBasePath } = require('../../tools/getBasePath');
 
-export default assetPath
+module.exports.assetPath = path => {
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path;
+  }
+  return `${getBasePath()}${path[0] === '/' ? '' : '/'}${path}`
+}

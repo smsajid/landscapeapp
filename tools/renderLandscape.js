@@ -1,9 +1,9 @@
-import Promise from 'bluebird';
-import { projectPath } from './settings';
-import { resolve } from 'path';
-import { landscapeSettingsList } from '../src/utils/landscapeSettings'
-import { calculateSize } from "../src/utils/landscapeCalculations";
-import { appUrl } from './distSettings'
+const path = require('path');
+const Promise = require('bluebird');
+const { projectPath, distPath } = require('./settings');
+const { landscapeSettingsList } = require('../src/utils/landscapeSettings');
+const { calculateSize } = require("../src/utils/landscapeCalculations");
+const { appUrl } = require('./distSettings');
 
 const getLastCommitSha = function() {
   return require('child_process').execSync(`cd '${projectPath}' && git log -n 1 --format=format:%h`).toString('utf-8').trim();
@@ -49,11 +49,10 @@ async function main() {
       const fullUrl = `${baseUrl}?version=${version}&scale=false&pdf`
       console.info(`visiting ${fullUrl}`);
       await page.goto(fullUrl, { waitUntil: 'networkidle0'});
-      const imagesPath = [projectPath, 'dist', process.env.PROJECT_NAME, 'images'].filter(_ => _)
-      await page.screenshot({ path: resolve(...imagesPath, fileName), fullPage: false });
+      await page.screenshot({ path: path.resolve(distPath, 'images', fileName), fullPage: false });
       if (pdfFileName) {
         await page.emulateMediaType('screen');
-        const pdfPath = resolve(...imagesPath, pdfFileName);
+        const pdfPath = path.resolve(distPath, 'images', pdfFileName);
         const pdfData = await page.pdf({width, height, printBackground: true, pageRanges: '1' });
         require('fs').writeFileSync(pdfPath, pdfData);
       }
